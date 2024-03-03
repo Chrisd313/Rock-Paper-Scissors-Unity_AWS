@@ -1,0 +1,232 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  Environment:
+    Type: String
+  GameName:
+    Type: String
+
+Resources:
+# DYNAMODB RESOURCES
+  GameSessionsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      AttributeDefinitions:
+        - AttributeName: uuid
+          AttributeType: S
+      KeySchema:
+        - AttributeName: uuid
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+      TableName: !Sub ${Environment}-${GameName}-GameSessionsTable
+    DeletionPolicy : Delete
+
+# LAMBDA RESOURCES
+  JoinGameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: A Lambda that handles the connection of the game
+      CodeUri: zip_files/join_game.zip
+      Runtime: nodejs14.x
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Handler: join_game.handler
+      Environment:
+        Variables:
+          Environment: !Ref Environment
+          GameName: !Ref GameName
+
+  GameMessagingFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: A Lambda that handles client to server messaging
+      CodeUri: zip_files/game_messaging.zip
+      Runtime: nodejs14.x
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Handler: game_messaging.handler
+      Environment:
+        Variables:
+          Environment: !Ref Environment
+          GameName: !Ref GameName
+
+  DisconnectGameFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Description: A Lambda that handles client to server messaging
+      CodeUri: zip_files/disconnect_game.zip
+      Runtime: nodejs14.x
+      Role: !GetAtt LambdaFunctionRole.Arn
+      Handler: disconnect_game.handler
+      Environment:
+        Variables:
+          Environment: !Ref Environment
+          GameName: !Ref GameName
+
+  LambdaFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Policies:
+        - PolicyName: LambdaFunctionPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - dynamodb:Scan
+                Resource: !GetAtt GameSessionsTable.Arn
+              - Effect: Allow
+                Action:
+                  - dynamodb:PutItem
+                Resource: !GetAtt GameSessionsTable.Arn
+              - Effect: Allow
+                Action:
+                  - dynamodb:UpdateItem
+                Resource: !GetAtt GameSessionsTable.Arn
+              - Effect: Allow
+                Action:
+                  - dynamodb:DeleteItem
+                Resource: !GetAtt GameSessionsTable.Arn
+              - Effect: Allow
+                Action: 
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource: arn:aws:logs:*:*:*
+              - Effect: Allow
+                Action:
+                  - execute-api:ManageConnections
+                Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
+
+# APIGATEWAY RESOURCES
+  ApiGateway:
+    Type: AWS::ApiGatewayV2::Api
+    Properties:
+      Name: !Sub  ${Environment}-${GameName}-API
+      Description: An example API Gateway
+      ProtocolType: WEBSOCKET
+      RouteSelectionExpression: '$request.body.action'
+
+  APIGatewayStage:
+    Type: AWS::ApiGatewayV2::Stage
+    Properties:
+      ApiId:
+        Ref: ApiGateway
+      AutoDeploy: true
+      StageName: Game_Server
+
+  ConnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Fn::GetAtt:
+          - ApiGateway
+          - ApiId
+      RouteKey: '$connect'
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref ConnectIntegration
+
+  ConnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      Description: 'test'
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${JoinGameFunction.Arn}/invocations'
+      IntegrationMethod: POST
+
+  DisconnectRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Fn::GetAtt:
+          - ApiGateway
+          - ApiId
+      RouteKey: '$disconnect'
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref DisconnectIntegration
+
+  DisconnectIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      Description: 'test'
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${DisconnectGameFunction.Arn}/invocations'
+      IntegrationMethod: POST
+
+  MessagingRoute:
+    Type: AWS::ApiGatewayV2::Route
+    Properties:
+      ApiId:
+        Fn::GetAtt:
+          - ApiGateway
+          - ApiId
+      RouteKey: 'OnMessage'
+      Target: !Join
+        - /
+        - - integrations
+          - !Ref MessagingIntegration
+
+  MessagingIntegration:
+    Type: AWS::ApiGatewayV2::Integration
+    Properties:
+      ApiId: !Ref ApiGateway
+      Description: 'test'
+      IntegrationType: AWS_PROXY
+      IntegrationUri: !Sub 'arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${GameMessagingFunction.Arn}/invocations'
+      IntegrationMethod: POST
+
+  IntegrationResponse:
+    Type: AWS::ApiGatewayV2::IntegrationResponse
+    Properties:
+      IntegrationId: !Ref ConnectIntegration
+      IntegrationResponseKey: /200/
+      ApiId: !Ref ApiGateway
+
+  JoinGameInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt JoinGameFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/$connect'
+
+  DisconnectGameInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt DisconnectGameFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/$disconnect'
+
+  GameMessagingInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt GameMessagingFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/OnMessage'
+
+  ApiGatewayDeployment:
+    Type: AWS::ApiGatewayV2::Deployment
+    Properties:
+      ApiId:
+        Fn::GetAtt:
+          - ApiGateway
+          - ApiId
+      StageName: 'Game_Server'
+    DependsOn: ConnectRoute
+
