@@ -28,7 +28,7 @@ Resources:
     Properties:
       Description: A Lambda that handles the connection of the game
       CodeUri: zip_files/join_game.zip
-      Runtime: nodejs14.x
+      Runtime: nodejs20.x
       Role: !GetAtt LambdaFunctionRole.Arn
       Handler: join_game.handler
       Environment:
@@ -41,7 +41,7 @@ Resources:
     Properties:
       Description: A Lambda that handles client to server messaging
       CodeUri: zip_files/game_messaging.zip
-      Runtime: nodejs14.x
+      Runtime: nodejs20.x
       Role: !GetAtt LambdaFunctionRole.Arn
       Handler: game_messaging.handler
       Environment:
@@ -54,7 +54,7 @@ Resources:
     Properties:
       Description: A Lambda that handles client to server messaging
       CodeUri: zip_files/disconnect_game.zip
-      Runtime: nodejs14.x
+      Runtime: nodejs20.x
       Role: !GetAtt LambdaFunctionRole.Arn
       Handler: disconnect_game.handler
       Environment:
@@ -103,6 +103,7 @@ Resources:
                 Resource: arn:aws:logs:*:*:*
               - Effect: Allow
                 Action:
+                  - execute-api:Invoke
                   - execute-api:ManageConnections
                 Resource: !Sub 'arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${ApiGateway}/*/*'
 
