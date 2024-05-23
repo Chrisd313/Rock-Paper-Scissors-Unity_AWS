@@ -9,14 +9,14 @@ function createZipFile(inputFilePath, outputZipFilePath) {
 }
 
 createZipFile(
-  "./AWS/lambda/join_game.js",
+  "./AWS/lambda/join_game.mjs",
   "./AWS/deployment/zip_files/join_game.zip"
 );
 createZipFile(
-  "./AWS/lambda/disconnect_game.js",
+  "./AWS/lambda/disconnect_game.mjs",
   "./AWS/deployment/zip_files/disconnect_game.zip"
 );
 createZipFile(
-  "./AWS/lambda/game_messaging.js",
+  "./AWS/lambda/game_messaging.mjs",
   "./AWS/deployment/zip_files/game_messaging.zip"
 );
