@@ -57,7 +57,7 @@ public class GameLogic : Singleton<GameLogic>
 
         if (isPlayingOnline)
         {
-            GameMessage.SendGameMessage(WebSocketService.MessagingOp, playerChoice);
+            GameMessage.SendGameMessage(WebSocketService.MESSAGING_OP, playerChoice);
         }
         else
         {

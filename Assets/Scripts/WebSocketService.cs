@@ -7,26 +7,24 @@ public class WebSocketService : Singleton<WebSocketService>
     [SerializeField]
     public GameLogic gameLogic;
     public const string webSocketDns = "";
-    public bool connectionEstablished;
-    public const string RequestStartOp = "1";
-    public const string PlayingOp = "2";
-    public const string MessagingOp = "3";
+    public const string REQUEST_START_OP = "1";
+    public const string REQUEST_ACCEPTED_OP = "2";
+    public const string MESSAGING_OP = "3";
     private bool intentionalClose = false;
     private WebSocket websocket;
 
     void Start()
     {
+        websocket = new WebSocket(webSocketDns);
+        SetupWebsocketCallbacks();
         intentionalClose = false;
     }
 
     void Update()
     {
-        if (connectionEstablished)
-        {
 #if !UNITY_WEBGL || UNITY_EDITOR
-            websocket.DispatchMessageQueue();
+        websocket.DispatchMessageQueue();
 #endif
-        }
     }
 
     // Establishes the connection's lifecycle callbacks.
@@ -35,7 +33,7 @@ public class WebSocketService : Singleton<WebSocketService>
         websocket.OnOpen += () =>
         {
             intentionalClose = false;
-            GameMessage.SendGameMessage(RequestStartOp, "");
+            GameMessage.SendGameMessage(REQUEST_START_OP, "");
         };
 
         websocket.OnError += (e) =>
@@ -57,8 +55,16 @@ public class WebSocketService : Singleton<WebSocketService>
 
         websocket.OnMessage += (bytes) =>
         {
-            string message = System.Text.Encoding.UTF8.GetString(bytes);
-            ProcessReceivedMessage(message);
+            try
+            {
+                string message = System.Text.Encoding.UTF8.GetString(bytes);
+                Debug.Log("Message received: " + message);
+                ProcessReceivedMessage(message);
+            }
+            catch (Exception ex)
+            {
+                Debug.Log("Error handling message: " + ex.Message);
+            }
         };
     }
 
@@ -66,8 +72,6 @@ public class WebSocketService : Singleton<WebSocketService>
     {
         try
         {
-            websocket = new WebSocket(webSocketDns);
-            SetupWebsocketCallbacks();
             GameLogic.Instance.ChangeState(GameLogic.GameState.Searching);
             await websocket.Connect();
         }
@@ -83,11 +87,11 @@ public class WebSocketService : Singleton<WebSocketService>
         GameMessage gameMessage = JsonUtility.FromJson<GameMessage>(message);
         Debug.Log("Message reecived: " + message);
 
-        if (gameMessage.opcode == PlayingOp)
+        if (gameMessage.opcode == REQUEST_ACCEPTED_OP)
         {
             gameLogic.StartGame();
         }
-        else if (gameMessage.opcode == MessagingOp)
+        else if (gameMessage.opcode == MESSAGING_OP)
         {
             gameLogic.opponentsChoice = gameMessage.message;
             gameLogic.CompareChoices();
